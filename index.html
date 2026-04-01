@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>India Census K-Means Clustering</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.27.0/plotly.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050a0e;
+    --bg2: #0c1620;
+    --bg3: #111d2a;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --accent3: #a8ff3e;
+    --text: #e8f4f8;
+    --muted: #5a7a8a;
+    --border: #1a3040;
+    --c0: #00e5ff; --c1: #ff6b35; --c2: #a8ff3e; --c3: #c77dff; --c4: #ffd60a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* NOISE OVERLAY */
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+
+  /* HEADER */
+  header {
+    position: relative; z-index: 10;
+    padding: 2.5rem 3rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-end; justify-content: space-between;
+    background: linear-gradient(180deg, rgba(0,229,255,0.04) 0%, transparent 100%);
+  }
+  .logo-block { display:flex; align-items:center; gap:1rem; }
+  .logo-icon {
+    width:48px; height:48px; border-radius:12px;
+    background: conic-gradient(from 0deg, var(--accent), var(--accent2), var(--accent3), var(--accent));
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.4rem; font-weight:800; color:#000; font-family:'Space Mono',monospace;
+    box-shadow: 0 0 30px rgba(0,229,255,0.3);
+  }
+  .logo-text h1 { font-size:1.6rem; font-weight:800; letter-spacing:-0.03em; line-height:1; }
+  .logo-text p { font-size:0.75rem; color:var(--muted); font-family:'Space Mono',monospace; margin-top:3px; letter-spacing:0.08em; text-transform:uppercase; }
+  .header-right { display:flex; align-items:center; gap:1rem; }
+  .badge { padding:6px 14px; border-radius:20px; font-size:0.7rem; font-family:'Space Mono',monospace; letter-spacing:0.1em; text-transform:uppercase; }
+  .badge-census { background:rgba(0,229,255,0.1); border:1px solid rgba(0,229,255,0.3); color:var(--accent); }
+  .badge-live { background:rgba(168,255,62,0.1); border:1px solid rgba(168,255,62,0.3); color:var(--accent3); display:flex; align-items:center; gap:6px; }
+  .pulse-dot { width:6px; height:6px; border-radius:50%; background:var(--accent3); animation:pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.4)} }
+
+  /* MAIN LAYOUT */
+  main { position:relative; z-index:1; padding:2rem 3rem; display:grid; gap:1.5rem; }
+
+  /* CONTROLS PANEL */
+  .controls {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:1rem;
+    background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:1.5rem;
+  }
+  .ctrl-group label { display:block; font-size:0.7rem; color:var(--muted); font-family:'Space Mono',monospace; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:8px; }
+  .slider-wrap { display:flex; align-items:center; gap:10px; }
+  input[type=range] {
+    flex:1; -webkit-appearance:none; height:4px; border-radius:2px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--pct,50%), var(--bg3) var(--pct,50%));
+    outline:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent); border:2px solid var(--bg); box-shadow:0 0 8px rgba(0,229,255,0.5); cursor:pointer; }
+  .val-badge { font-size:0.85rem; font-weight:700; color:var(--accent); font-family:'Space Mono',monospace; min-width:24px; text-align:right; }
+  .btn-row { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end; }
+  .btn {
+    padding:10px 20px; border-radius:10px; font-family:'Syne',sans-serif; font-weight:700; font-size:0.85rem;
+    cursor:pointer; border:none; transition:all 0.2s; letter-spacing:0.02em;
+  }
+  .btn-primary { background:var(--accent); color:#000; }
+  .btn-primary:hover { background:#33eeff; box-shadow:0 0 20px rgba(0,229,255,0.4); transform:translateY(-1px); }
+  .btn-danger { background:rgba(255,107,53,0.15); border:1px solid rgba(255,107,53,0.4); color:var(--accent2); }
+  .btn-danger:hover { background:rgba(255,107,53,0.25); }
+  .btn-dl { background:rgba(168,255,62,0.12); border:1px solid rgba(168,255,62,0.35); color:var(--accent3); }
+  .btn-dl:hover { background:rgba(168,255,62,0.22); box-shadow:0 0 16px rgba(168,255,62,0.2); }
+  .btn-step { background:rgba(199,125,255,0.12); border:1px solid rgba(199,125,255,0.35); color:#c77dff; }
+  .btn-step:hover { background:rgba(199,125,255,0.22); }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; transform:none !important; box-shadow:none !important; }
+
+  /* STATUS BAR */
+  .status-bar {
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;
+    background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:0.9rem 1.5rem;
+    font-family:'Space Mono',monospace; font-size:0.78rem;
+  }
+  .status-item { display:flex; align-items:center; gap:8px; }
+  .status-label { color:var(--muted); }
+  .status-val { color:var(--accent); font-weight:700; }
+  .status-val.converged { color:var(--accent3); }
+  .progress-bar { flex:1; min-width:120px; height:4px; background:var(--bg3); border-radius:2px; overflow:hidden; }
+  .progress-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2)); border-radius:2px; transition:width 0.3s; }
+
+  /* VIZ GRID */
+  .viz-grid { display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; }
+  .viz-grid-full { display:grid; grid-template-columns:1fr; gap:1.5rem; }
+
+  .panel {
+    background:var(--bg2); border:1px solid var(--border); border-radius:16px; overflow:hidden;
+  }
+  .panel-header {
+    padding:1rem 1.5rem; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel-title { font-size:0.8rem; font-family:'Space Mono',monospace; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); }
+  .panel-title span { color:var(--text); }
+  .panel-body { padding:1rem; }
+
+  /* SCATTER CANVAS */
+  #scatter-canvas { width:100%; height:420px; display:block; }
+
+  /* INDIA MAP */
+  #india-map { width:100%; height:420px; }
+
+  /* 3D PLOT */
+  #plot3d { width:100%; height:480px; }
+
+  /* HISTORY CHART */
+  #history-canvas { width:100%; height:200px; display:block; }
+
+  /* STATS TABLE */
+  .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0.75rem; padding:1rem; }
+  .stat-card {
+    padding:1rem; border-radius:12px; border:1px solid var(--border);
+    background:var(--bg3); transition:border-color 0.3s;
+  }
+  .stat-card:hover { border-color:var(--accent); }
+  .stat-card-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .cluster-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .stat-card h4 { font-size:0.72rem; font-family:'Space Mono',monospace; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase; }
+  .stat-card .big-num { font-size:1.5rem; font-weight:800; line-height:1; margin:4px 0; }
+  .stat-card p { font-size:0.72rem; color:var(--muted); }
+
+  /* DATA TABLE */
+  .data-table-wrap { overflow:auto; max-height:320px; }
+  table { width:100%; border-collapse:collapse; font-size:0.78rem; }
+  th { background:var(--bg3); padding:8px 12px; text-align:left; font-family:'Space Mono',monospace; font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); position:sticky; top:0; z-index:2; border-bottom:1px solid var(--border); }
+  td { padding:8px 12px; border-bottom:1px solid rgba(26,48,64,0.5); }
+  tr:hover td { background:rgba(0,229,255,0.03); }
+  .cluster-tag { display:inline-block; padding:2px 8px; border-radius:20px; font-size:0.68rem; font-weight:700; font-family:'Space Mono',monospace; }
+
+  /* TOAST */
+  #toast {
+    position:fixed; bottom:2rem; right:2rem; z-index:999;
+    background:var(--bg2); border:1px solid var(--accent); color:var(--accent);
+    padding:12px 20px; border-radius:10px; font-family:'Space Mono',monospace; font-size:0.8rem;
+    transform:translateY(80px); opacity:0; transition:all 0.3s;
+    box-shadow:0 0 30px rgba(0,229,255,0.2);
+  }
+  #toast.show { transform:translateY(0); opacity:1; }
+
+  /* FOOTER */
+  footer { position:relative; z-index:1; padding:1.5rem 3rem; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; font-size:0.72rem; font-family:'Space Mono',monospace; color:var(--muted); }
+
+  @media(max-width:900px) {
+    header, main, footer { padding-left:1.2rem; padding-right:1.2rem; }
+    .viz-grid { grid-template-columns:1fr; }
+    header { flex-direction:column; align-items:flex-start; gap:1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-block">
+    <div class="logo-icon">KM</div>
+    <div class="logo-text">
+      <h1>India Census Clustering</h1>
+      <p>K-Means · Income &amp; Education · 2011 Census of India</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="badge badge-census">Source: Census India 2011</span>
+    <span class="badge badge-live"><span class="pulse-dot"></span>Interactive</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Number of Clusters (K)</label>
+      <div class="slider-wrap">
+        <input type="range" id="k-slider" min="2" max="6" value="4" oninput="updateSlider(this,'k-val')">
+        <span class="val-badge" id="k-val">4</span>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <label>Animation Speed (ms)</label>
+      <div class="slider-wrap">
+        <input type="range" id="speed-slider" min="200" max="2000" value="800" step="100" oninput="updateSlider(this,'speed-val')">
+        <span class="val-badge" id="speed-val">800</span>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <label>Max Iterations</label>
+      <div class="slider-wrap">
+        <input type="range" id="iter-slider" min="5" max="50" value="20" oninput="updateSlider(this,'iter-val')">
+        <span class="val-badge" id="iter-val">20</span>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <label>Actions</label>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="run-btn" onclick="runClustering()">▶ Run K-Means</button>
+        <button class="btn btn-step" id="step-btn" onclick="stepOnce()" disabled>⏭ Step</button>
+        <button class="btn btn-danger" onclick="resetAll()">↺ Reset</button>
+        <button class="btn btn-dl" onclick="downloadReport()">↓ Report</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="status-bar">
+    <div class="status-item"><span class="status-label">Iteration:</span><span class="status-val" id="s-iter">—</span></div>
+    <div class="status-item"><span class="status-label">Inertia (WCSS):</span><span class="status-val" id="s-inertia">—</span></div>
+    <div class="status-item"><span class="status-label">Centroid Shift:</span><span class="status-val" id="s-shift">—</span></div>
+    <div class="status-item"><span class="status-label">Status:</span><span class="status-val" id="s-status">Ready</span></div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  </div>
+
+  <!-- SCATTER + MAP -->
+  <div class="viz-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">📍 <span>2D Scatter — Income vs Literacy</span></div>
+        <span style="font-size:0.7rem;color:var(--muted);font-family:'Space Mono',monospace;">Centroid movement animated</span>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <canvas id="scatter-canvas"></canvas>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">🌍 <span>India State Cluster Map</span></div>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <div id="india-map"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3D PLOT -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📊 <span>3D Scatter — Income · Literacy · Urbanisation</span></div>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div id="plot3d"></div>
+    </div>
+  </div>
+
+  <!-- INERTIA HISTORY + STATS -->
+  <div class="viz-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">📈 <span>Inertia Convergence</span></div>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <canvas id="history-canvas"></canvas>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">🔮 <span>Cluster Summary</span></div>
+      </div>
+      <div class="stats-grid" id="stats-grid">
+        <div style="color:var(--muted);font-size:0.8rem;padding:1rem;grid-column:1/-1">Run K-Means to see cluster statistics.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATA TABLE -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📋 <span>State-wise Cluster Assignments — Census 2011</span></div>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="data-table-wrap">
+        <table id="data-table">
+          <thead>
+            <tr>
+              <th>State / UT</th>
+              <th>Per Capita Income (₹)</th>
+              <th>Literacy Rate (%)</th>
+              <th>Urbanisation (%)</th>
+              <th>Sex Ratio</th>
+              <th>Cluster</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <span>Data: Census of India 2011 · National Sample Survey · Reserve Bank of India · MoSPI</span>
+  <span>Built with K-Means from scratch · Plotly.js · Canvas API</span>
+</footer>
+
+<div id="toast"></div>
+
+<script>
+// ─── REAL CENSUS DATA ──────────────────────────────────────────────────────
+// Sources: Census 2011 literacy rates, RBI state finances income proxies,
+// Census 2011 urbanisation, Census 2011 sex ratio
+const STATES = [
+  { name:"Andhra Pradesh",    income:59601,  literacy:67.0, urban:33.5, sexRatio:993,  lat:15.9, lon:79.7 },
+  { name:"Arunachal Pradesh", income:72322,  literacy:65.4, urban:22.7, sexRatio:938,  lat:28.2, lon:94.7 },
+  { name:"Assam",             income:34012,  literacy:72.2, urban:14.1, sexRatio:954,  lat:26.2, lon:92.9 },
+  { name:"Bihar",             income:22902,  literacy:61.8, urban:11.3, sexRatio:918,  lat:25.1, lon:85.3 },
+  { name:"Chhattisgarh",      income:44712,  literacy:70.3, urban:23.2, sexRatio:991,  lat:21.3, lon:81.7 },
+  { name:"Goa",               income:192652, literacy:88.7, urban:62.2, sexRatio:973,  lat:15.3, lon:74.1 },
+  { name:"Gujarat",           income:95652,  literacy:78.0, urban:42.6, sexRatio:919,  lat:22.3, lon:72.6 },
+  { name:"Haryana",           income:99451,  literacy:75.5, urban:34.9, sexRatio:879,  lat:29.1, lon:76.1 },
+  { name:"Himachal Pradesh",  income:93562,  literacy:82.8, urban:10.0, sexRatio:972,  lat:31.1, lon:77.2 },
+  { name:"Jharkhand",         income:32432,  literacy:66.4, urban:24.1, sexRatio:948,  lat:23.6, lon:85.3 },
+  { name:"Karnataka",         income:88892,  literacy:75.6, urban:38.6, sexRatio:973,  lat:15.3, lon:75.7 },
+  { name:"Kerala",            income:92212,  literacy:94.0, urban:47.7, sexRatio:1084, lat:10.9, lon:76.3 },
+  { name:"Madhya Pradesh",    income:40012,  literacy:69.3, urban:27.6, sexRatio:931,  lat:23.5, lon:77.7 },
+  { name:"Maharashtra",       income:112152, literacy:82.3, urban:45.2, sexRatio:925,  lat:19.7, lon:75.7 },
+  { name:"Manipur",           income:42312,  literacy:76.9, urban:30.2, sexRatio:987,  lat:24.7, lon:93.9 },
+  { name:"Meghalaya",         income:55401,  literacy:74.4, urban:20.1, sexRatio:986,  lat:25.5, lon:91.4 },
+  { name:"Mizoram",           income:56781,  literacy:91.3, urban:52.1, sexRatio:976,  lat:23.2, lon:92.8 },
+  { name:"Nagaland",          income:58901,  literacy:79.6, urban:28.9, sexRatio:931,  lat:26.2, lon:94.6 },
+  { name:"Odisha",            income:38452,  literacy:72.9, urban:16.7, sexRatio:979,  lat:20.4, lon:84.8 },
+  { name:"Punjab",            income:95791,  literacy:75.8, urban:37.5, sexRatio:895,  lat:31.1, lon:75.3 },
+  { name:"Rajasthan",         income:47312,  literacy:66.1, urban:24.9, sexRatio:928,  lat:27.0, lon:74.2 },
+  { name:"Sikkim",            income:122481, literacy:81.4, urban:25.2, sexRatio:890,  lat:27.5, lon:88.5 },
+  { name:"Tamil Nadu",        income:98212,  literacy:80.1, urban:48.4, sexRatio:996,  lat:11.1, lon:78.7 },
+  { name:"Telangana",         income:97451,  literacy:66.5, urban:38.9, sexRatio:988,  lat:18.1, lon:79.0 },
+  { name:"Tripura",           income:54121,  literacy:87.2, urban:26.2, sexRatio:960,  lat:23.8, lon:91.3 },
+  { name:"Uttar Pradesh",     income:32452,  literacy:67.7, urban:22.3, sexRatio:912,  lat:27.1, lon:80.9 },
+  { name:"Uttarakhand",       income:77812,  literacy:78.8, urban:30.2, sexRatio:963,  lat:30.1, lon:79.3 },
+  { name:"West Bengal",       income:63452,  literacy:76.3, urban:31.9, sexRatio:950,  lat:23.0, lon:87.9 },
+  { name:"Delhi",             income:215621, literacy:86.2, urban:97.5, sexRatio:868,  lat:28.7, lon:77.2 },
+  { name:"Jammu & Kashmir",   income:61231,  literacy:67.2, urban:27.2, sexRatio:889,  lat:34.1, lon:74.8 },
+];
+
+const COLORS = ['#00e5ff','#ff6b35','#a8ff3e','#c77dff','#ffd60a','#ff4d6d'];
+const CLUSTER_NAMES = [
+  "High-Income Urban Elite",
+  "Agrarian Low-Income Belt",
+  "Emerging Industrial States",
+  "Literate Mid-Income States",
+  "Tribal / Mountain Frontier",
+  "Metro Powerhouses"
+];
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let K = 4, centroids = [], assignments = [], history = [];
+let iteration = 0, animTimer = null, isRunning = false, converged = false;
+let maxIter = 20;
+
+// ─── NORMALIZE ────────────────────────────────────────────────────────────────
+function normalize(data) {
+  const fields = ['income','literacy','urban'];
+  const mins = {}, maxs = {};
+  fields.forEach(f => {
+    mins[f] = Math.min(...data.map(d=>d[f]));
+    maxs[f] = Math.max(...data.map(d=>d[f]));
+  });
+  return data.map(d => ({
+    ...d,
+    ni: (d.income - mins.income)/(maxs.income - mins.income),
+    nl: (d.literacy - mins.literacy)/(maxs.literacy - mins.literacy),
+    nu: (d.urban - mins.urban)/(maxs.urban - mins.urban),
+  }));
+}
+
+const DATA = normalize(STATES);
+
+// ─── K-MEANS ──────────────────────────────────────────────────────────────────
+function initCentroids(k) {
+  const shuffled = [...DATA].sort(()=>Math.random()-0.5);
+  return shuffled.slice(0,k).map(d=>({ ni:d.ni, nl:d.nl, nu:d.nu }));
+}
+
+function assignClusters(cents) {
+  return DATA.map(d => {
+    let best=0, bestDist=Infinity;
+    cents.forEach((c,i) => {
+      const dist = Math.hypot(d.ni-c.ni, d.nl-c.nl, d.nu-c.nu);
+      if(dist<bestDist){ bestDist=dist; best=i; }
+    });
+    return best;
+  });
+}
+
+function updateCentroids(asgn, k) {
+  return Array.from({length:k},(_,i) => {
+    const pts = DATA.filter((_,j)=>asgn[j]===i);
+    if(!pts.length) return centroids[i];
+    return {
+      ni: pts.reduce((s,p)=>s+p.ni,0)/pts.length,
+      nl: pts.reduce((s,p)=>s+p.nl,0)/pts.length,
+      nu: pts.reduce((s,p)=>s+p.nu,0)/pts.length,
+    };
+  });
+}
+
+function calcInertia(asgn, cents) {
+  return DATA.reduce((s,d,i) => {
+    const c = cents[asgn[i]];
+    return s + Math.pow(d.ni-c.ni,2)+Math.pow(d.nl-c.nl,2)+Math.pow(d.nu-c.nu,2);
+  }, 0);
+}
+
+function centroidShift(old, next) {
+  return old.reduce((s,c,i)=>s+Math.hypot(c.ni-next[i].ni, c.nl-next[i].nl, c.nu-next[i].nu),0);
+}
+
+// ─── SCATTER CANVAS ───────────────────────────────────────────────────────────
+const SC = document.getElementById('scatter-canvas');
+const ctx = SC.getContext('2d');
+let centroidTrails = [];
+
+function resizeCanvas() {
+  SC.width = SC.offsetWidth * devicePixelRatio;
+  SC.height = SC.offsetHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+}
+
+function drawScatter() {
+  const W = SC.offsetWidth, H = SC.offsetHeight;
+  ctx.clearRect(0,0,W,H);
+
+  const pad = 60;
+  const toX = ni => pad + ni * (W - pad*2);
+  const toY = nl => H - pad - nl * (H - pad*2);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(26,48,64,0.8)'; ctx.lineWidth=1;
+  for(let i=0;i<=5;i++){
+    const x = pad + i*(W-pad*2)/5;
+    const y = H-pad - i*(H-pad*2)/5;
+    ctx.beginPath(); ctx.moveTo(x,pad); ctx.lineTo(x,H-pad); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke();
+  }
+
+  // Axis labels
+  ctx.fillStyle='rgba(90,122,138,0.8)'; ctx.font=`${11/devicePixelRatio*devicePixelRatio}px Space Mono`;
+  ctx.textAlign='center';
+  ctx.fillText('← Per Capita Income →', W/2, H-8);
+  ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('← Literacy Rate →', 0, 0); ctx.restore();
+
+  // Centroid trails
+  centroidTrails.forEach((trail, ci) => {
+    if(trail.length < 2) return;
+    ctx.strokeStyle = COLORS[ci % COLORS.length];
+    ctx.lineWidth = 1.5; ctx.setLineDash([4,4]); ctx.globalAlpha=0.4;
+    ctx.beginPath();
+    trail.forEach((pt,j) => {
+      const x=toX(pt.ni), y=toY(pt.nl);
+      j===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
+  });
+
+  // Data points
+  DATA.forEach((d,i) => {
+    const c = assignments.length ? assignments[i] : -1;
+    const color = c>=0 ? COLORS[c%COLORS.length] : 'rgba(90,122,138,0.6)';
+    const x=toX(d.ni), y=toY(d.nl);
+    ctx.beginPath(); ctx.arc(x,y,7,0,Math.PI*2);
+    ctx.fillStyle = color+'33'; ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle='rgba(232,244,248,0.85)'; ctx.font=`9px Space Mono`;
+    ctx.textAlign='center';
+    ctx.fillText(d.name.split(' ')[0].substring(0,8), x, y-11);
+  });
+
+  // Centroids
+  if(centroids.length) {
+    centroids.forEach((c,i) => {
+      const x=toX(c.ni), y=toY(c.nl);
+      const color=COLORS[i%COLORS.length];
+      ctx.beginPath(); ctx.arc(x,y,13,0,Math.PI*2);
+      ctx.fillStyle=color+'22'; ctx.fill();
+      ctx.strokeStyle=color; ctx.lineWidth=3; ctx.stroke();
+      // crosshair
+      ctx.strokeStyle=color; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(x-18,y); ctx.lineTo(x+18,y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x,y-18); ctx.lineTo(x,y+18); ctx.stroke();
+      ctx.fillStyle=color; ctx.font=`bold 10px Syne`;
+      ctx.textAlign='center';
+      ctx.fillText('C'+(i+1), x, y+4);
+    });
+  }
+}
+
+// ─── INERTIA HISTORY CHART ────────────────────────────────────────────────────
+const HC = document.getElementById('history-canvas');
+const hctx = HC.getContext('2d');
+
+function resizeHistoryCanvas(){
+  HC.width = HC.offsetWidth * devicePixelRatio;
+  HC.height = HC.offsetHeight * devicePixelRatio;
+  hctx.scale(devicePixelRatio, devicePixelRatio);
+}
+
+function drawHistory() {
+  const W=HC.offsetWidth, H=HC.offsetHeight;
+  hctx.clearRect(0,0,W,H);
+  if(history.length<2) return;
+  const pad=40;
+  const minV=Math.min(...history)*0.95, maxV=Math.max(...history)*1.05;
+  const toX=i=>pad+i*(W-pad*2)/(Math.max(history.length-1,1));
+  const toY=v=>H-pad-(v-minV)/(maxV-minV)*(H-pad*2);
+
+  hctx.strokeStyle='rgba(26,48,64,0.8)'; hctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=H-pad-i*(H-pad*2)/4;
+    hctx.beginPath(); hctx.moveTo(pad,y); hctx.lineTo(W-pad,y); hctx.stroke();
+    hctx.fillStyle='rgba(90,122,138,0.6)'; hctx.font='9px Space Mono';
+    hctx.textAlign='right';
+    hctx.fillText(((minV+(maxV-minV)*i/4)).toFixed(2), pad-4, y+3);
+  }
+
+  // Area fill
+  const grad=hctx.createLinearGradient(0,pad,0,H-pad);
+  grad.addColorStop(0,'rgba(0,229,255,0.2)'); grad.addColorStop(1,'rgba(0,229,255,0)');
+  hctx.beginPath();
+  hctx.moveTo(toX(0),toY(history[0]));
+  history.forEach((v,i)=>hctx.lineTo(toX(i),toY(v)));
+  hctx.lineTo(toX(history.length-1),H-pad); hctx.lineTo(toX(0),H-pad); hctx.closePath();
+  hctx.fillStyle=grad; hctx.fill();
+
+  // Line
+  hctx.strokeStyle='#00e5ff'; hctx.lineWidth=2.5; hctx.lineJoin='round';
+  hctx.beginPath();
+  history.forEach((v,i)=>{ const x=toX(i),y=toY(v); i===0?hctx.moveTo(x,y):hctx.lineTo(x,y); });
+  hctx.stroke();
+
+  // Dots
+  history.forEach((v,i)=>{
+    hctx.beginPath(); hctx.arc(toX(i),toY(v),4,0,Math.PI*2);
+    hctx.fillStyle='#00e5ff'; hctx.fill();
+  });
+
+  hctx.fillStyle='rgba(90,122,138,0.6)'; hctx.font='9px Space Mono'; hctx.textAlign='center';
+  hctx.fillText('← Iteration →', W/2, H-6);
+}
+
+// ─── PLOTLY 3D ────────────────────────────────────────────────────────────────
+function draw3D() {
+  const groups = Array.from({length:K},(_,i)=>DATA.filter((_,j)=>assignments[j]===i));
+  const traces = groups.map((g,i)=>({
+    type:'scatter3d', mode:'markers+text',
+    x:g.map(d=>d.income), y:g.map(d=>d.literacy), z:g.map(d=>d.urban),
+    text:g.map(d=>d.name.split(' ')[0]),
+    textfont:{size:9, color:COLORS[i]},
+    textposition:'top center',
+    name: CLUSTER_NAMES[i] || `Cluster ${i+1}`,
+    marker:{
+      size:8, color:COLORS[i], opacity:0.85,
+      line:{color:'rgba(255,255,255,0.3)',width:1}
+    }
+  }));
+
+  // Centroid trace
+  if(centroids.length) {
+    // denormalize centroids
+    const minI=Math.min(...STATES.map(s=>s.income)), maxI=Math.max(...STATES.map(s=>s.income));
+    const minL=Math.min(...STATES.map(s=>s.literacy)), maxL=Math.max(...STATES.map(s=>s.literacy));
+    const minU=Math.min(...STATES.map(s=>s.urban)), maxU=Math.max(...STATES.map(s=>s.urban));
+    traces.push({
+      type:'scatter3d', mode:'markers+text',
+      x:centroids.map(c=>minI+c.ni*(maxI-minI)),
+      y:centroids.map(c=>minL+c.nl*(maxL-minL)),
+      z:centroids.map(c=>minU+c.nu*(maxU-minU)),
+      text:centroids.map((_,i)=>`C${i+1}`),
+      textfont:{size:12, color:'#ffffff'},
+      name:'Centroids',
+      marker:{size:16, color:centroids.map((_,i)=>COLORS[i]), symbol:'diamond', opacity:1,
+        line:{color:'white',width:2}}
+    });
+  }
+
+  const layout = {
+    paper_bgcolor:'transparent', plot_bgcolor:'transparent',
+    margin:{l:0,r:0,b:0,t:0},
+    scene:{
+      xaxis:{title:'Per Capita Income (₹)', titlefont:{color:'#5a7a8a'}, tickfont:{color:'#5a7a8a'}, gridcolor:'#1a3040', zerolinecolor:'#1a3040', backgroundcolor:'rgba(12,22,32,0.0)'},
+      yaxis:{title:'Literacy Rate (%)', titlefont:{color:'#5a7a8a'}, tickfont:{color:'#5a7a8a'}, gridcolor:'#1a3040', zerolinecolor:'#1a3040'},
+      zaxis:{title:'Urbanisation (%)', titlefont:{color:'#5a7a8a'}, tickfont:{color:'#5a7a8a'}, gridcolor:'#1a3040', zerolinecolor:'#1a3040'},
+      bgcolor:'rgba(5,10,14,0.0)'
+    },
+    legend:{font:{color:'#5a7a8a', family:'Space Mono'}, bgcolor:'rgba(12,22,32,0.8)', bordercolor:'#1a3040', borderwidth:1},
+    font:{family:'Space Mono', color:'#5a7a8a'}
+  };
+  Plotly.react('plot3d', traces, layout, {responsive:true, displayModeBar:false});
+}
+
+// ─── INDIA MAP (Plotly choropleth via lat/lon scatter) ────────────────────────
+function drawMap() {
+  const colors = assignments.length
+    ? DATA.map((_,i) => COLORS[assignments[i] % COLORS.length])
+    : DATA.map(()=>'#5a7a8a');
+  const clusterNames = assignments.length
+    ? DATA.map((_,i) => CLUSTER_NAMES[assignments[i]] || `Cluster ${assignments[i]+1}`)
+    : DATA.map(()=>'Unassigned');
+
+  const trace = {
+    type:'scattergeo', mode:'markers+text',
+    lat:DATA.map(d=>d.lat), lon:DATA.map(d=>d.lon),
+    text:DATA.map(d=>d.name.split(' ').map(w=>w[0]).join('').substring(0,3)),
+    customdata:DATA.map((d,i)=>`${d.name}<br>Cluster: ${clusterNames[i]}<br>Income: ₹${d.income.toLocaleString()}<br>Literacy: ${d.literacy}%`),
+    hovertemplate:'%{customdata}<extra></extra>',
+    textfont:{size:8, color:'rgba(255,255,255,0.8)'},
+    textposition:'middle center',
+    marker:{size:16, color:colors, opacity:0.9, line:{color:'rgba(255,255,255,0.4)',width:1.5}}
+  };
+
+  const layout = {
+    paper_bgcolor:'transparent', plot_bgcolor:'transparent',
+    margin:{l:0,r:0,b:0,t:0},
+    geo:{
+      scope:'asia',
+      center:{lat:22,lon:82},
+      projection:{scale:5.5},
+      showland:true, landcolor:'#111d2a',
+      showocean:true, oceancolor:'#07111a',
+      showcountries:true, countrycolor:'#1a3040',
+      showcoastlines:true, coastlinecolor:'#1a3040',
+      bgcolor:'transparent',
+      lataxis:{range:[6,38]}, lonaxis:{range:[66,98]}
+    }
+  };
+  Plotly.react('india-map', [trace], layout, {responsive:true, displayModeBar:false});
+}
+
+// ─── STATS CARDS ─────────────────────────────────────────────────────────────
+function updateStats() {
+  const grid = document.getElementById('stats-grid');
+  grid.innerHTML = '';
+  for(let i=0;i<K;i++){
+    const pts = DATA.filter((_,j)=>assignments[j]===i);
+    if(!pts.length) continue;
+    const avgIncome = pts.reduce((s,d)=>s+d.income,0)/pts.length;
+    const avgLit = pts.reduce((s,d)=>s+d.literacy,0)/pts.length;
+    const card = document.createElement('div'); card.className='stat-card';
+    card.innerHTML=`
+      <div class="stat-card-header">
+        <div class="cluster-dot" style="background:${COLORS[i]}; box-shadow:0 0 8px ${COLORS[i]}55"></div>
+        <h4>${CLUSTER_NAMES[i]||'Cluster '+(i+1)}</h4>
+      </div>
+      <div class="big-num" style="color:${COLORS[i]}">${pts.length}</div>
+      <p>States/UTs in cluster</p>
+      <p style="margin-top:6px;color:var(--text)">Avg Income: <strong>₹${Math.round(avgIncome).toLocaleString()}</strong></p>
+      <p>Avg Literacy: <strong>${avgLit.toFixed(1)}%</strong></p>
+      <p style="font-size:0.68rem;color:var(--muted);margin-top:6px">${pts.map(p=>p.name.split(' ')[0]).join(', ')}</p>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+// ─── TABLE ────────────────────────────────────────────────────────────────────
+function updateTable() {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  DATA.forEach((d,i)=>{
+    const c = assignments.length ? assignments[i] : -1;
+    const color = c>=0 ? COLORS[c%COLORS.length] : '#5a7a8a';
+    const label = c>=0 ? (CLUSTER_NAMES[c]||`Cluster ${c+1}`) : '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML=`
+      <td style="font-weight:600">${d.name}</td>
+      <td style="font-family:'Space Mono',monospace">₹${d.income.toLocaleString()}</td>
+      <td style="font-family:'Space Mono',monospace">${d.literacy}%</td>
+      <td style="font-family:'Space Mono',monospace">${d.urban}%</td>
+      <td style="font-family:'Space Mono',monospace">${d.sexRatio}</td>
+      <td><span class="cluster-tag" style="background:${color}22;border:1px solid ${color}66;color:${color}">${label}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── STATUS BAR ──────────────────────────────────────────────────────────────
+function updateStatus(iter, inertia, shift, status) {
+  document.getElementById('s-iter').textContent = iter;
+  document.getElementById('s-inertia').textContent = inertia ? inertia.toFixed(4) : '—';
+  document.getElementById('s-shift').textContent = shift ? shift.toFixed(4) : '—';
+  const sel = document.getElementById('s-status');
+  sel.textContent = status;
+  sel.className = 'status-val' + (status==='Converged ✓' ? ' converged' : '');
+  const pct = Math.min(100, (iter/maxIter)*100);
+  document.getElementById('progress-fill').style.width = pct+'%';
+}
+
+// ─── SLIDER UTIL ──────────────────────────────────────────────────────────────
+function updateSlider(el, valId) {
+  document.getElementById(valId).textContent = el.value;
+  const pct = (el.value - el.min)/(el.max - el.min)*100;
+  el.style.setProperty('--pct', pct+'%');
+}
+['k-slider','speed-slider','iter-slider'].forEach(id=>{
+  const el=document.getElementById(id);
+  updateSlider(el, id.replace('slider','val').replace('--','-'));
+});
+
+// ─── RUN ──────────────────────────────────────────────────────────────────────
+function runClustering() {
+  if(isRunning) return;
+  K = parseInt(document.getElementById('k-slider').value);
+  maxIter = parseInt(document.getElementById('iter-slider').value);
+  const speed = parseInt(document.getElementById('speed-slider').value);
+
+  centroids = initCentroids(K);
+  assignments = assignClusters(centroids);
+  centroidTrails = centroids.map(c=>[{...c}]);
+  history = [calcInertia(assignments, centroids)];
+  iteration = 0; converged = false; isRunning = true;
+
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('step-btn').disabled = false;
+
+  drawScatter(); drawMap(); draw3D(); drawHistory(); updateTable();
+  updateStatus(0, history[0], 0, 'Running…');
+
+  animTimer = setInterval(()=>{
+    if(!doStep()) { clearInterval(animTimer); finalize(); }
+  }, speed);
+}
+
+function doStep() {
+  if(iteration >= maxIter || converged) return false;
+  const newCentroids = updateCentroids(assignments, K);
+  const shift = centroidShift(centroids, newCentroids);
+  centroids = newCentroids;
+  assignments = assignClusters(centroids);
+  centroids.forEach((c,i)=>centroidTrails[i].push({...c}));
+  const inertia = calcInertia(assignments, centroids);
+  history.push(inertia);
+  iteration++;
+
+  drawScatter(); drawHistory(); draw3D(); drawMap();
+  updateStatus(iteration, inertia, shift, shift < 0.001 ? 'Converged ✓' : `Iteration ${iteration}`);
+
+  if(shift < 0.001) { converged = true; return false; }
+  return iteration < maxIter;
+}
+
+function stepOnce() {
+  if(!centroids.length) { toast('Run K-Means first!'); return; }
+  if(!doStep()) finalize();
+}
+
+function finalize() {
+  isRunning = false;
+  document.getElementById('run-btn').disabled = false;
+  updateStats(); updateTable(); drawMap();
+  updateStatus(iteration, history[history.length-1], 0, converged ? 'Converged ✓' : 'Max Iterations Reached');
+  toast(converged ? `Converged in ${iteration} iterations ✓` : `Stopped after ${iteration} iterations`);
+}
+
+function resetAll() {
+  clearInterval(animTimer); isRunning = false; converged = false;
+  centroids=[]; assignments=[]; centroidTrails=[]; history=[]; iteration=0;
+  document.getElementById('run-btn').disabled = false;
+  document.getElementById('step-btn').disabled = true;
+  document.getElementById('stats-grid').innerHTML='<div style="color:var(--muted);font-size:0.8rem;padding:1rem;grid-column:1/-1">Run K-Means to see cluster statistics.</div>';
+  resizeCanvas(); drawScatter();
+  resizeHistoryCanvas(); drawHistory();
+  drawMap(); draw3D(); updateTable();
+  updateStatus('—','—','—','Ready');
+}
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 3000);
+}
+
+// ─── DOWNLOAD REPORT ─────────────────────────────────────────────────────────
+function downloadReport() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
+
+  doc.setFillColor(5,10,14); doc.rect(0,0,210,297,'F');
+  doc.setTextColor(0,229,255);
+  doc.setFontSize(20); doc.setFont('helvetica','bold');
+  doc.text('India Census K-Means Clustering Report', 14, 22);
+
+  doc.setFontSize(9); doc.setTextColor(90,122,138);
+  doc.text('Data Sources: Census of India 2011 | RBI State Finances | MoSPI', 14, 30);
+  doc.text(`Generated: ${new Date().toLocaleString()} | K = ${K} | Iterations = ${iteration}`, 14, 35);
+
+  if(!assignments.length) { doc.setTextColor(255,107,53); doc.text('Run K-Means first to generate cluster data.', 14, 50); doc.save('india_kmeans_report.pdf'); return; }
+
+  doc.setDrawColor(26,48,64); doc.line(14,38,196,38);
+
+  doc.setFontSize(12); doc.setTextColor(232,244,248); doc.setFont('helvetica','bold');
+  doc.text('Cluster Summary', 14, 46);
+
+  let y = 54;
+  const clrMap = [[0,229,255],[255,107,53],[168,255,62],[199,125,255],[255,214,10]];
+  for(let i=0;i<K;i++){
+    const pts = DATA.filter((_,j)=>assignments[j]===i);
+    if(!pts.length) continue;
+    const avgI=pts.reduce((s,d)=>s+d.income,0)/pts.length;
+    const avgL=pts.reduce((s,d)=>s+d.literacy,0)/pts.length;
+    const [r,g,b]=clrMap[i%clrMap.length];
+    doc.setFillColor(r,g,b); doc.roundedRect(14,y-4,4,4,1,1,'F');
+    doc.setTextColor(r,g,b); doc.setFontSize(10); doc.setFont('helvetica','bold');
+    doc.text(`Cluster ${i+1}: ${CLUSTER_NAMES[i]||''}`, 22, y);
+    doc.setTextColor(232,244,248); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text(`${pts.length} States | Avg Income: ₹${Math.round(avgI).toLocaleString()} | Avg Literacy: ${avgL.toFixed(1)}%`, 22, y+5);
+    doc.setTextColor(90,122,138);
+    doc.text('States: '+pts.map(p=>p.name).join(', '), 22, y+10, {maxWidth:165});
+    y += 22;
+  }
+
+  doc.setDrawColor(26,48,64); doc.line(14,y+2,196,y+2); y+=10;
+  doc.setFontSize(12); doc.setTextColor(232,244,248); doc.setFont('helvetica','bold');
+  doc.text('State-wise Data Table', 14, y); y+=8;
+
+  doc.setFillColor(12,22,32); doc.rect(14,y-4,182,6,'F');
+  doc.setFontSize(7); doc.setTextColor(90,122,138); doc.setFont('helvetica','bold');
+  ['State','Income (₹)','Literacy (%)','Urban (%)','Sex Ratio','Cluster'].forEach((h,i)=>{
+    doc.text(h, 14+[0,38,72,95,118,143][i], y);
+  });
+  y+=4; doc.setDrawColor(26,48,64); doc.line(14,y,196,y); y+=5;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(7);
+  DATA.forEach((d,i)=>{
+    if(y>280){ doc.addPage(); doc.setFillColor(5,10,14); doc.rect(0,0,210,297,'F'); y=20; }
+    const c=assignments[i]; const [r,g,b]=clrMap[c%clrMap.length];
+    doc.setTextColor(232,244,248); doc.text(d.name, 14, y);
+    doc.text('₹'+d.income.toLocaleString(), 52, y);
+    doc.text(d.literacy+'%', 76, y);
+    doc.text(d.urban+'%', 99, y);
+    doc.text(d.sexRatio+'', 122, y);
+    doc.setTextColor(r,g,b); doc.text(`C${c+1}`, 147, y);
+    y+=5;
+  });
+
+  if(history.length>1){
+    y+=8; doc.setTextColor(232,244,248); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    if(y>260){ doc.addPage(); doc.setFillColor(5,10,14); doc.rect(0,0,210,297,'F'); y=20; }
+    doc.text('Convergence: Final Inertia = '+history[history.length-1].toFixed(4)+' | Iterations = '+iteration, 14, y);
+  }
+
+  doc.save('india_kmeans_clustering_report.pdf');
+  toast('Report downloaded as PDF ✓');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+window.addEventListener('load', ()=>{
+  resizeCanvas(); resizeHistoryCanvas();
+  drawScatter(); drawMap(); draw3D(); drawHistory(); updateTable();
+});
+window.addEventListener('resize', ()=>{
+  resizeCanvas(); resizeHistoryCanvas();
+  drawScatter(); drawHistory();
+});
+</script>
+</body>
+</html>
